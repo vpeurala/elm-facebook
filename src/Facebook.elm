@@ -1,10 +1,11 @@
 module Facebook
-  ( initialModel
-  , eventToAction
-  , update
-  , Event
-  , Action(..)
-  ) where
+    exposing
+        ( initialModel
+        , eventToAction
+        , update
+        , Event
+        , Action(..)
+        )
 
 {-| Facebook API for ELM
 
@@ -75,61 +76,81 @@ window.fbAsyncInit = function () {
 
 import Task
 import Native.Facebook
-import Effects exposing(Effects)
 import Json.Encode
-import Json.Decode exposing(decodeValue)
+import Json.Decode exposing (decodeValue)
+
 
 {-| Facebook Actions
 
 Did Action &mdash;
 DidValue Action Value &mdash;
 
- -}
+-}
 type Action
-  = NoOp
-  | GET String
-  | POST String JsonValue
-  | DELETE String
-  | Login
-  | Logout
-  | FbEvent IncomingEvent
-  | Did Action
-  | DidValue Action JsonValue
+    = NoOp
+    | GET String
+    | POST String JsonValue
+    | DELETE String
+    | Login
+    | Logout
+    | FbEvent IncomingEvent
+    | Did Action
+    | DidValue Action JsonValue
+
 
 type IncomingEvent
-  = Init InitOptions
-  | LoggedIn JsonValue
-  | LoggedOut JsonValue
-  | AuthResponseChanged JsonValue
-  | StatusChanged JsonValue
+    = Init InitOptions
+    | LoggedIn JsonValue
+    | LoggedOut JsonValue
+    | AuthResponseChanged JsonValue
+    | StatusChanged JsonValue
 
-{-| Facebook Model -}
+
+{-| Facebook Model
+-}
 type alias Model =
-  { ready : Bool, id : Maybe String }
+    { ready : Bool, id : Maybe String }
 
-type alias EventName = String
 
-type alias JsonValue = Json.Decode.Value
+type alias EventName =
+    String
 
-{-| Type of events sent to your application port -}
-type alias Event = (EventName, JsonValue)
 
-type alias InitOptions = JsonValue
+type alias JsonValue =
+    Json.Decode.Value
 
-type alias Update = (Model, Effects Action)
 
-{-| Convert an Event tuple into an actual Action -}
-eventToAction : (EventName, JsonValue) -> Action
-eventToAction (eventName, jsonValue) =
-  case eventName of
-    "Init" ->
-      FbEvent (Init jsonValue)
-    "StatusChanged" ->
-      FbEvent (StatusChanged jsonValue)
-    "AuthResponseChanged" ->
-      FbEvent (AuthResponseChanged jsonValue)
-    _ ->
-      NoOp
+{-| Type of events sent to your application port
+-}
+type alias Event =
+    ( EventName, JsonValue )
+
+
+type alias InitOptions =
+    JsonValue
+
+
+type alias Update =
+    ( Model, Platform.Task String Action )
+
+
+{-| Convert an Event tuple into an actual Action
+-}
+eventToAction : ( EventName, JsonValue ) -> Action
+eventToAction ( eventName, jsonValue ) =
+    case eventName of
+        "Init" ->
+            FbEvent (Init jsonValue)
+
+        "StatusChanged" ->
+            FbEvent (StatusChanged jsonValue)
+
+        "AuthResponseChanged" ->
+            FbEvent (AuthResponseChanged jsonValue)
+
+        _ ->
+            NoOp
+
 
 {-| The initial model
 
@@ -138,88 +159,124 @@ an Init signal is seen.
 -}
 initialModel : Model
 initialModel =
-  { ready = False, id = Nothing }
+    { ready = False, id = Nothing }
+
 
 updateOnInit : InitOptions -> Action -> Model -> Update
 updateOnInit options action model =
-  init options |> always (noEffects {model | ready = True})
+    init options |> always (noEffects { model | ready = True })
 
+
+authResponseUserId : Json.Decode.Decoder String
 authResponseUserId =
-  Json.Decode.at ["authResponse", "userID"] Json.Decode.string
+    Json.Decode.at [ "authResponse", "userID" ] Json.Decode.string
+
 
 updateOnStatusChanged : JsonValue -> Action -> Model -> Update
 updateOnStatusChanged jsonValue action model =
-  let
-    decoded = decodeValue authResponseUserId jsonValue
-  in case decoded of
-    Ok id ->
-      connectedEffects id model
-    _ ->
-      disconnectedEffects model
+    let
+        decoded =
+            decodeValue authResponseUserId jsonValue
+    in
+        case decoded of
+            Ok id ->
+                connectedEffects id model
+
+            _ ->
+                disconnectedEffects model
+
 
 {-| Step model and produce possible effects
- -}
+-}
 update : Action -> Model -> Update
 update action model =
-  case action of
-    Login ->
-      login  () |> always (noEffects model)
-    Logout ->
-      logout () |> always (noEffects model)
-    FbEvent (Init options) ->
-      updateOnInit options action model
-    FbEvent (StatusChanged jsonValue) ->
-      updateOnStatusChanged jsonValue action model
-    GET path ->
-      apiRequestEffects "GET" path emptyJsonValue action model
-    POST path jsonValue ->
-      apiRequestEffects "POST" path jsonValue action model
-    DELETE path ->
-      apiRequestEffects "DELETE" path emptyJsonValue action model
-    _ -> noEffects model
+    case action of
+        Login ->
+            login () |> always (noEffects model)
+
+        Logout ->
+            logout () |> always (noEffects model)
+
+        FbEvent (Init options) ->
+            updateOnInit options action model
+
+        FbEvent (StatusChanged jsonValue) ->
+            updateOnStatusChanged jsonValue action model
+
+        GET path ->
+            apiRequestEffects "GET" path emptyJsonValue action model
+
+        POST path jsonValue ->
+            apiRequestEffects "POST" path jsonValue action model
+
+        DELETE path ->
+            apiRequestEffects "DELETE" path emptyJsonValue action model
+
+        _ ->
+            noEffects model
+
 
 noEffects : Model -> Update
 noEffects model =
-  (model, Effects.none)
+    ( model, Task.fail "noEffects" )
+
 
 connectedEffects : String -> Model -> Update
 connectedEffects facebookId model =
-  let
-    new_model = {model | id = Just facebookId}
-    effects = Task.succeed (Did Login) |> Effects.task
-  in
-    (new_model, effects)
+    let
+        new_model =
+            { model | id = Just facebookId }
+
+        effects =
+            Task.succeed (Did Login)
+    in
+        ( new_model, effects )
+
 
 disconnectedEffects : Model -> Update
 disconnectedEffects model =
-  let
-    new_model = {model | id = Nothing}
-    effects = Task.succeed (Did Logout) |> Effects.task
-  in
-    (new_model, effects)
+    let
+        new_model =
+            { model | id = Nothing }
 
+        effects =
+            Task.succeed (Did Logout)
+    in
+        ( new_model, effects )
+
+
+emptyJsonValue : Json.Encode.Value
 emptyJsonValue =
-  Json.Encode.object []
+    Json.Encode.object []
+
 
 apiRequestEffects : String -> String -> JsonValue -> Action -> Model -> Update
 apiRequestEffects method path data action model =
-  let
-    requestEffects = apiTask (method, path, data) |> Effects.task
-    didEffects = Effects.map (DidValue action) requestEffects
-  in
-    (model, didEffects)
+    let
+        requestEffects =
+            apiTask ( method, path, data )
 
-apiTask : (String, String, JsonValue) -> Task.Task x JsonValue
-apiTask = Native.Facebook.api
+        didEffects =
+            Task.map (DidValue action) requestEffects
+    in
+        ( model, didEffects )
+
+
+apiTask : ( String, String, JsonValue ) -> Task.Task x JsonValue
+apiTask =
+    Native.Facebook.api
+
 
 init : InitOptions -> ()
 init =
-  Native.Facebook.init
+    Native.Facebook.init
+
 
 login : () -> ()
 login =
-  Native.Facebook.login
+    Native.Facebook.login
+
 
 logout : () -> ()
 logout =
-  Native.Facebook.logout
+    Native.Facebook.logout
