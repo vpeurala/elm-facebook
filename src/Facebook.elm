@@ -4,7 +4,8 @@ module Facebook
         , eventToAction
         , update
         , Event
-        , Action(..)
+        , Msg(..)
+        , Model
         )
 
 {-| Facebook API for ELM
@@ -70,11 +71,15 @@ window.fbAsyncInit = function () {
 
 # Actions
 
-@docs update, Action
+@docs update, Msg
+
+# Model
+
+@docs Model
 
 -}
 
-import Task
+import Task exposing (Task)
 import Native.Facebook
 import Json.Encode
 import Json.Decode exposing (decodeValue)
@@ -86,7 +91,7 @@ Did Action &mdash;
 DidValue Action Value &mdash;
 
 -}
-type Action
+type Msg
     = NoOp
     | GET String
     | POST String JsonValue
@@ -94,8 +99,8 @@ type Action
     | Login
     | Logout
     | FbEvent IncomingEvent
-    | Did Action
-    | DidValue Action JsonValue
+    | Did Msg
+    | DidValue Msg JsonValue
 
 
 type IncomingEvent
@@ -130,13 +135,9 @@ type alias InitOptions =
     JsonValue
 
 
-type alias Update =
-    ( Model, Platform.Task String Action )
-
-
 {-| Convert an Event tuple into an actual Action
 -}
-eventToAction : ( EventName, JsonValue ) -> Action
+eventToAction : ( EventName, JsonValue ) -> Msg
 eventToAction ( eventName, jsonValue ) =
     case eventName of
         "Init" ->
@@ -162,7 +163,7 @@ initialModel =
     { ready = False, id = Nothing }
 
 
-updateOnInit : InitOptions -> Action -> Model -> Update
+updateOnInit : InitOptions -> Msg -> Model -> ( Model, Task String Msg )
 updateOnInit options action model =
     init options |> always (noEffects { model | ready = True })
 
@@ -172,7 +173,7 @@ authResponseUserId =
     Json.Decode.at [ "authResponse", "userID" ] Json.Decode.string
 
 
-updateOnStatusChanged : JsonValue -> Action -> Model -> Update
+updateOnStatusChanged : JsonValue -> Msg -> Model -> ( Model, Task String Msg )
 updateOnStatusChanged jsonValue action model =
     let
         decoded =
@@ -188,7 +189,7 @@ updateOnStatusChanged jsonValue action model =
 
 {-| Step model and produce possible effects
 -}
-update : Action -> Model -> Update
+update : Msg -> Model -> ( Model, Task String Msg )
 update action model =
     case action of
         Login ->
@@ -216,12 +217,12 @@ update action model =
             noEffects model
 
 
-noEffects : Model -> Update
+noEffects : Model -> ( Model, Task String Msg )
 noEffects model =
     ( model, Task.fail "noEffects" )
 
 
-connectedEffects : String -> Model -> Update
+connectedEffects : String -> Model -> ( Model, Task String Msg )
 connectedEffects facebookId model =
     let
         new_model =
@@ -233,7 +234,7 @@ connectedEffects facebookId model =
         ( new_model, effects )
 
 
-disconnectedEffects : Model -> Update
+disconnectedEffects : Model -> ( Model, Task String Msg )
 disconnectedEffects model =
     let
         new_model =
@@ -250,7 +251,7 @@ emptyJsonValue =
     Json.Encode.object []
 
 
-apiRequestEffects : String -> String -> JsonValue -> Action -> Model -> Update
+apiRequestEffects : String -> String -> JsonValue -> Msg -> Model -> ( Model, Task String Msg )
 apiRequestEffects method path data action model =
     let
         requestEffects =
